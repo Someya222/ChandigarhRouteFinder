@@ -189,11 +189,11 @@ if st.button("Find Shortest Route"):
         # Realistic time calculation
         # Base speed calculation
         if distance_km < 5:
-            base_speed = 25
+            base_speed = 40
         elif distance_km < 15:
-            base_speed = 28
+            base_speed = 60
         else:
-            base_speed = 32
+            base_speed = 50
             
         # Calculate base time
         base_time_min = (distance_km / base_speed) * 60
