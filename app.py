@@ -89,21 +89,25 @@ col1, col2 = st.columns(2, gap="large")
 with col1:
     st.markdown("### Start Location")
     start_location = st.selectbox(
-        "Select starting point",
-        options=sorted(CHANDIGARH_LOCATIONS.keys()),
+        "Choose starting point",
+        options=["Choose starting point..."] + sorted(CHANDIGARH_LOCATIONS.keys()),
         key="start_select",
-        label_visibility="collapsed"
+        index=0
     )
+    if start_location == "Choose starting point...":
+        st.stop()
     start_latlon = CHANDIGARH_LOCATIONS[start_location]
 
 with col2:
     st.markdown("### Destination")
     end_location = st.selectbox(
-        "Select destination",
-        options=sorted(CHANDIGARH_LOCATIONS.keys()),
+        "Choose destination",
+        options=["Choose destination..."] + sorted(CHANDIGARH_LOCATIONS.keys()),
         key="end_select",
-        label_visibility="collapsed"
+        index=0
     )
+    if end_location == "Choose destination...":
+        st.stop()
     end_latlon = CHANDIGARH_LOCATIONS[end_location]
 
 # Validation
