@@ -89,25 +89,21 @@ col1, col2 = st.columns(2, gap="large")
 with col1:
     st.markdown("### Start Location")
     start_location = st.selectbox(
-        "Choose starting point",
-        options=["Choose starting point..."] + sorted(CHANDIGARH_LOCATIONS.keys()),
+        "Select starting point",
+        options=sorted(CHANDIGARH_LOCATIONS.keys()),
         key="start_select",
-        index=0
+        label_visibility="collapsed"
     )
-    if start_location == "Choose starting point...":
-        st.stop()
     start_latlon = CHANDIGARH_LOCATIONS[start_location]
 
 with col2:
     st.markdown("### Destination")
     end_location = st.selectbox(
-        "Choose destination",
-        options=["Choose destination..."] + sorted(CHANDIGARH_LOCATIONS.keys()),
+        "Select destination",
+        options=sorted(CHANDIGARH_LOCATIONS.keys()),
         key="end_select",
-        index=0
+        label_visibility="collapsed"
     )
-    if end_location == "Choose destination...":
-        st.stop()
     end_latlon = CHANDIGARH_LOCATIONS[end_location]
 
 # Validation
@@ -124,12 +120,15 @@ if st.button("Find Shortest Route"):
         # Load Graph without simplification for accurate distances
         if st.session_state.G is None:
             with st.spinner("Loading road network data..."):
+                # Load with larger buffer to ensure we get all roads
                 G = ox.graph_from_place(
-                    "Chandigarh, India",
+                    "Chandigarh, Punjab, India",
                     network_type="drive",
-                    simplify=False  # Don't simplify - keep all nodes
+                    simplify=False,
+                    retain_all=True
                 )
                 st.session_state.G = G
+                st.success(f"Loaded {len(G.nodes):,} nodes and {len(G.edges):,} edges")
         else:
             G = st.session_state.G
         
@@ -150,11 +149,11 @@ if st.button("Find Shortest Route"):
         st.session_state.start_name = start_location
         st.session_state.end_name = end_location
         
-        # Run Dijkstra's Algorithm  
+        # Run shortest path algorithm
         with st.spinner("Computing shortest path..."):
             import networkx as nx
             
-            # Use NetworkX shortest path (most reliable)
+            # Use NetworkX shortest path
             try:
                 route = nx.shortest_path(G, start_node, end_node, weight='length')
             except nx.NetworkXNoPath:
@@ -169,43 +168,78 @@ if st.button("Find Shortest Route"):
             st.error("No route found between these locations")
             st.stop()
         
-        # Calculate actual distance by summing edge lengths
-        actual_distance_meters = 0
+        # Also get the distance from NetworkX for comparison
+        try:
+            nx_distance = nx.shortest_path_length(G, start_node, end_node, weight='length')
+        except:
+            nx_distance = 0
+        
+        # Calculate distance using NetworkX result (most accurate)
+        distance_km = nx_distance / 1000
+        
+        # Verify by manual calculation
+        manual_distance = 0
         for i in range(len(route) - 1):
             u, v = route[i], route[i + 1]
-            # Get edge data
             edge_data = G.get_edge_data(u, v)
-            if edge_data:
-                # Handle MultiDiGraph - get first edge
-                if isinstance(edge_data, dict) and len(edge_data) > 0:
-                    first_key = min(edge_data.keys())
-                    edge_attrs = edge_data[first_key]
-                    edge_length = edge_attrs.get('length', 0)
-                    actual_distance_meters += edge_length
-        
-        # Convert to km
-        distance_km = actual_distance_meters / 1000
-        
-        # Realistic time calculation
-        # Base speed calculation
-        if distance_km < 5:
-            base_speed = 40
-        elif distance_km < 15:
-            base_speed = 60
-        else:
-            base_speed = 50
             
-        # Calculate base time
-        base_time_min = (distance_km / base_speed) * 60
+            if edge_data:
+                min_length = float('inf')
+                for key in edge_data.keys():
+                    length = edge_data[key].get('length', 0)
+                    if length < min_length:
+                        min_length = length
+                if min_length != float('inf'):
+                    manual_distance += min_length
         
-        # Add realistic delays
-        num_intersections = len(route) - 1
-        intersection_delay = num_intersections * 0.3  # 18 seconds per intersection avg
+        manual_distance_km = manual_distance / 1000
         
-        estimated_time_min = base_time_min + intersection_delay
+        # Use the larger of the two (more conservative)
+        if manual_distance_km > distance_km:
+            distance_km = manual_distance_km
+        
+        # Realistic time calculation for Chandigarh
+        # Account for city traffic, signals, and congestion
+        if distance_km < 3:
+            avg_speed = 20  # Heavy traffic area
+        elif distance_km < 8:
+            avg_speed = 25  # Normal city driving
+        elif distance_km < 15:
+            avg_speed = 30  # Mix of city and arterial roads
+        else:
+            avg_speed = 35  # Some highway/faster roads
+            
+        # Base time
+        base_time_min = (distance_km / avg_speed) * 60
+        
+        # Add time for stops and delays
+        # Assume ~1 traffic light or stop per km
+        stops_per_km = 1.5
+        stop_time_per_light = 0.5  # 30 seconds average
+        total_stop_time = distance_km * stops_per_km * stop_time_per_light
+        
+        estimated_time_min = base_time_min + total_stop_time
         
         # Display Results
         st.markdown("## Route Details")
+        
+        # Show debug info in expander
+        with st.expander("Route Calculation Details", expanded=False):
+            st.write(f"**Start Node:** {start_node}")
+            st.write(f"**End Node:** {end_node}")
+            st.write(f"**Route Length:** {len(route)} nodes")
+            st.write(f"**NetworkX Distance:** {nx_distance:.2f} meters ({nx_distance/1000:.2f} km)")
+            st.write(f"**Manual Distance:** {manual_distance:.2f} meters ({manual_distance_km:.2f} km)")
+            st.write(f"**Final Distance Used:** {distance_km:.2f} km")
+            
+            # Show first few edges
+            st.write("**First 5 edges:**")
+            for i in range(min(5, len(route)-1)):
+                u, v = route[i], route[i+1]
+                edge_data = G.get_edge_data(u, v)
+                if edge_data:
+                    first_edge = edge_data[list(edge_data.keys())[0]]
+                    st.write(f"Edge {i+1}: {u} → {v}, Length: {first_edge.get('length', 0):.2f}m")
         
         # Metrics
         col1, col2, col3 = st.columns(3)
